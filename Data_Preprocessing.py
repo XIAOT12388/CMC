@@ -12,7 +12,6 @@ os.environ['PYTHONHASHSEED'] = str(SEED)
 def get_abs_path(relative_path):
     return os.path.abspath(relative_path)
 
-# ==== 加载停用词表 ====
 def load_stopwords(stopwords_path):
     try:
         with open(stopwords_path, 'r', encoding='utf-8') as f:
@@ -25,7 +24,6 @@ def load_stopwords(stopwords_path):
                                  '为', '以', '或', '于', '有', '也', '但', '还', '又', '之', '这', '那', '着'])
         print(f"使用默认停用词表，包含 {len(default_stopwords)} 个停用词")
         return default_stopwords
-
 
 def load_mapping(mapping_file):
     df = pd.read_csv(mapping_file, encoding='utf-8')
@@ -51,13 +49,11 @@ def preprocess_data(train_file, test_file, mapping_file, stopwords_path):
     train_df = pd.read_excel(train_file)
     test_df = pd.read_excel(test_file)
 
-    # 数据预处理
     for df in [train_df, test_df]:
         df['text'] = df['text'].fillna('')
         df['text-emoji'] = df['text-emoji'].fillna('')
         df['text_with_emoji'] = df['text-emoji'].apply(lambda x: replace_emoji_with_special_token(x, mapping_dict))
 
-    # 文本预处理
     for mode in ['text', 'text_with_emoji']:
         train_df[f'{mode}_processed'] = train_df[mode].apply(lambda x: preprocess_text(x, stopwords))
         test_df[f'{mode}_processed'] = test_df[mode].apply(lambda x: preprocess_text(x, stopwords))
