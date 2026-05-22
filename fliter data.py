@@ -3,7 +3,6 @@ import random
 import numpy as np
 from sklearn.model_selection import StratifiedGroupKFold
 
-# 设置随机种子
 random.seed(42)
 np.random.seed(42)
 
@@ -35,11 +34,5 @@ print(f"\n原始标签比例: {orig_ratio:.4f}")
 print(f"训练集标签比例: {train_ratio:.4f}")
 print(f"测试集标签比例: {test_ratio:.4f}")
 
-if abs(test_ratio - orig_ratio) >= 0.05:
-    print("⚠️ 警告：测试集标签分布与原始分布偏差超过5%（可能由分组限制导致）")
-else:
-    print("✅ 标签分布验证通过")
-
-# 保存结果
 test_df.to_excel(r"D:\your document", index=False)
 train_df.to_excel(r"D:\your document.xlsx", index=False)
