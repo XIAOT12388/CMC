@@ -13,31 +13,25 @@ import json
 import hashlib
 import matplotlib.pyplot as plt
 
-# 设置中文字体
 plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False
 
-# ---------------- 环境 ----------------
 SEED = 42
 random.seed(SEED)
 np.random.seed(SEED)
 
-# ---------------- API配置 ----------------
 client = OpenAI(
     api_key=os.environ.get('your API_KEY'),
     base_url="https://api.deepseek.com"
 )
 
-# ---------------- 路径 ----------------
 test_path = 'your path'
 save_dir = 'your path'
 cache_file = f"{save_dir}/api_cache.json"
 mapping_file = 'your path'
 os.makedirs(save_dir, exist_ok=True)
 
-# emoji映射函数
 def load_mapping(mapping_file):
-    """加载emoji到中文语义的映射"""
     mapping_dict = {}
     try:
         df = pd.read_csv(mapping_file, encoding='utf-8')
@@ -50,10 +44,7 @@ def load_mapping(mapping_file):
         print(f"加载emoji映射文件失败: {e}")
     return mapping_dict
 
-
-# 修改emoji处理函数
 def replace_emoji_with_special_token(text, mapping_dict):
-    """将文本中的emoji替换为中文语义描述"""
     if pd.isna(text) or not isinstance(text, str):
         return ""
 
@@ -66,8 +57,6 @@ def replace_emoji_with_special_token(text, mapping_dict):
 
     return pattern.sub(replace_func, text)
 
-
-# 缓存管理
 def load_cache():
     if os.path.exists(cache_file):
         with open(cache_file, 'r', encoding='utf-8') as f:
@@ -80,16 +69,14 @@ def save_cache(cache):
         json.dump(cache, f, ensure_ascii=False, indent=2)
 
 
-# 修改get_text_hash函数
 def get_text_hash(text):
 
-    if pd.isna(text):  # 处理NaN
+    if pd.isna(text): 
         text = ""
     elif not isinstance(text, str):
         text = str(text)
     return hashlib.md5(text.encode('utf-8')).hexdigest()
 
-# 调试函数：检查概率分布
 def debug_probability_distribution(y_probs, model_name):
 
     y_probs_array = np.asarray(y_probs)
@@ -98,7 +85,6 @@ def debug_probability_distribution(y_probs, model_name):
     print(f"概率值范围: [{y_probs_array.min():.6f}, {y_probs_array.max():.6f}]")
     print(f"唯一概率值数量: {len(np.unique(y_probs_array))}")
 
-    # 统计概率值分布
     unique_probs, counts = np.unique(y_probs_array, return_counts=True)
     print(f"前10个概率值及其频次:")
     for prob, count in zip(unique_probs[:10], counts[:10]):
@@ -107,7 +93,6 @@ def debug_probability_distribution(y_probs, model_name):
     if len(unique_probs) < 10:
         print(f"所有概率值: {unique_probs}")
 
-# 数据
 mapping_dict = load_mapping(mapping_file)
 
 test_df = pd.read_excel(test_path)
@@ -172,34 +157,28 @@ def build_messages(test_text):
     ]
 
 
-# 概率提取函数
 def extract_true_probability_reliable(response):
     try:
         choice = response.choices[0]
 
-        # 严格检查logprobs是否存在
         if not choice.logprobs or not choice.logprobs.content:
             print('[WARN] logprobs missing')
             return None
 
-        # 检查第一个token的top_logprobs
         token_logprobs = choice.logprobs.content[0].top_logprobs
         if not token_logprobs:
             print('[WARN] top_logprobs empty')
             return None
 
-        # 收集所有token的logprobs
         logprob_dict = {}
         for top_logprob in token_logprobs:
             token = top_logprob.token.strip()
             logprob_dict[token] = top_logprob.logprob
 
-        # 关键：如果0和1都在logprobs中，计算softmax
         if "0" in logprob_dict and "1" in logprob_dict:
             logprob_0 = logprob_dict["0"]
             logprob_1 = logprob_dict["1"]
 
-            # 使用softmax计算真实概率
             max_logprob = max(logprob_0, logprob_1)
             logprob_0_adj = logprob_0 - max_logprob
             logprob_1_adj = logprob_1 - max_logprob
@@ -219,7 +198,6 @@ def extract_true_probability_reliable(response):
         print(f'[ERROR] 概率提取失败: {e}')
         return None
 
-# API调用函数
 def call_deepseek_api(messages, text_hash, cache, max_retries=1):
 
     for attempt in range(max_retries):
@@ -237,14 +215,12 @@ def call_deepseek_api(messages, text_hash, cache, max_retries=1):
             content = response.choices[0].message.content.strip()
             prob = extract_true_probability_reliable(response)
 
-            # 如果概率提取失败，重试而不是使用固定值
             if prob is None:
                 print(f'第{attempt + 1}次尝试概率提取失败，进行重试')
                 if attempt < max_retries - 1:
                     time.sleep(1)
                     continue
                 else:
-                    # 最终失败时返回None，让上层处理
                     print(f'[ERROR] 无法获取真实概率，文本哈希: {text_hash[:8]}')
                     return content, parse_model_output(content), None
 
@@ -253,7 +229,7 @@ def call_deepseek_api(messages, text_hash, cache, max_retries=1):
             cache[text_hash] = {
                 'content': content,
                 'pred': pred,
-                'prob': prob  # 保存真实概率
+                'prob': prob  
             }
 
             return content, pred, prob
@@ -261,18 +237,14 @@ def call_deepseek_api(messages, text_hash, cache, max_retries=1):
         except Exception as e:
             print(f"API调用失败 (尝试 {attempt + 1}/{max_retries}): {e}")
             if attempt < max_retries - 1:
-                wait_time = 2 ** attempt  # 移除随机等待
+                wait_time = 2 ** attempt  
                 time.sleep(wait_time)
             else:
-                # 最终失败时返回None
                 return "0", 0, None
 
     return "0", 0, None
 
-
-# 解析函数
 def parse_model_output(answer):
-    """严格解析模型输出，返回预测标签"""
     if not answer:
         return 0
 
@@ -287,14 +259,11 @@ def parse_model_output(answer):
             print(f"警告：模型输出异常: '{answer}'，默认返回0")
         return 0
 
-
-# 批量预测函数
 def predict_labels_api(texts, batch_delay=2, desc="DeepSeek推理"):
     preds = []
     probs = []
     failed_count = 0
 
-    # 用于调试：记录概率分布
     unique_probs_set = set()
 
     cache = load_cache()
@@ -308,12 +277,10 @@ def predict_labels_api(texts, batch_delay=2, desc="DeepSeek推理"):
             cache_hits += 1
             cached_result = cache[text_hash]
 
-            # 确保缓存中有必要的字段
             if 'pred' not in cached_result:
                 cached_result['pred'] = parse_model_output(cached_result.get('content', ''))
 
             if 'prob' not in cached_result or cached_result['prob'] is None:
-                # 如果缓存中没有概率或概率为None，重新计算
                 cache_misses += 1
                 cache_hits -= 1
                 del cache[text_hash]
@@ -326,19 +293,15 @@ def predict_labels_api(texts, batch_delay=2, desc="DeepSeek推理"):
             messages = build_messages(text)
             content, pred, prob = call_deepseek_api(messages, text_hash, cache)
 
-        # 处理概率为None的情况
         if prob is None:
             failed_count += 1
-            if pred == 1:
-                prob = 0.9  # 固定值，不随机
-            else:
-                prob = 0.1  # 固定值，不随机
-            print(f'[WARN] 使用默认概率: {prob} for pred: {pred}')
+            print(f'[WARN] API调用失败或概率缺失，当前失败数: {failed_count}')
 
         preds.append(pred)
         probs.append(prob)
-        unique_probs_set.add(round(prob, 4))
-
+        
+        if prob is not None:
+            unique_probs_set.add(round(prob, 4))
         if i % 20 == 0:
             save_cache(cache)
 
@@ -349,17 +312,13 @@ def predict_labels_api(texts, batch_delay=2, desc="DeepSeek推理"):
 
     return preds, probs
 
-
-# 评估函数
 def evaluate_performance_fixed(y_true, y_pred, y_probs, model_name):
     y_true = np.asarray(y_true, dtype=int)
     y_pred = np.asarray(y_pred, dtype=int)
     y_probs_array = np.asarray(y_probs, dtype=float)
 
-    # 调试概率分布
     debug_probability_distribution(y_probs_array, model_name)
 
-    # 基础指标
     acc = accuracy_score(y_true, y_pred)
     pre = precision_score(y_true, y_pred, zero_division=0)
     rec = recall_score(y_true, y_pred, zero_division=0)
@@ -380,37 +339,31 @@ def evaluate_performance_fixed(y_true, y_pred, y_probs, model_name):
         "y_true": y_true,
         "y_probs": y_probs_array
     }
-#  主流程
 test_y = test_df["label"].values
 
-# 预测原始文本
 print("\n1. 预测原始文本（无emoji处理）...")
 test_texts_original = test_df["text"].tolist()
 test_preds_original, test_probs_original = predict_labels_api(
     test_texts_original, batch_delay=2, desc="原始文本推理"
 )
 
-# 预测处理后的文本
 print("\n2. 预测处理后的文本（包含emoji语义）...")
 test_texts_processed = test_df["text_emoji_processed"].tolist()
 test_preds_processed, test_probs_processed = predict_labels_api(
     test_texts_processed, batch_delay=2, desc="处理文本推理"
 )
 
-# 评估两种版本的性能
 print("\n3. 评估模型性能...")
 metrics_original = evaluate_performance_fixed(test_y, test_preds_original, test_probs_original, "DeepSeek-原始文本")
 metrics_processed = evaluate_performance_fixed(test_y, test_preds_processed, test_probs_processed, "DeepSeek-Emoji处理")
 
 
-# 对比分析
 print("\n=== 性能对比分析 ===")
 print(f"准确率差异: {metrics_processed['accuracy'] - metrics_original['accuracy']:+.4f}")
 print(f"精确率差异: {metrics_processed['precision'] - metrics_original['precision']:+.4f}")
 print(f"召回率差异: {metrics_processed['recall'] - metrics_original['recall']:+.4f}")
 print(f"F1分数差异: {metrics_processed['f1'] - metrics_original['f1']:+.4f}")
 
-# --------------- 保存结果 ---------------
 print("\n7. 保存最终结果...")
 result_df3 = pd.DataFrame({
     "text_original": test_texts_original,
