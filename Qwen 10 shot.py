@@ -11,7 +11,6 @@ from sklearn.metrics import (
 import matplotlib.pyplot as plt
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
-# ---------------- 环境 ----------------
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 SEED = 42
@@ -20,18 +19,15 @@ np.random.seed(SEED)
 torch.manual_seed(SEED)
 torch.cuda.manual_seed_all(SEED)
 
-# ---------------- 路径 ----------------
 base = 'your path'
 test_path = 'your path'
 mapping_path = f"{base}/ your path"
 save_dir = 'your path'
 os.makedirs(save_dir, exist_ok=True)
 
-# ---------------- 设置中文字体 ----------------
 plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False
 
-# --------------- 工具函数 --------------
 def load_mapping(path):
     df = pd.read_csv(path, encoding="utf-8")
     mapping_dict = dict(zip(df.emoji, df.chinese))
@@ -45,14 +41,12 @@ def replace_emoji(text, mapping_dict):
     pat = re.compile("|".join(map(re.escape, keys)))
     return pat.sub(lambda m: f"[{mapping_dict[m.group(0)]}]", text)
 
-# 调试函数
 def debug_probability_distribution(y_probs, model_name):
     y_probs_array = np.asarray(y_probs)
     print(f"\n=== {model_name} 概率分布调试 ===")
     print(f"概率值范围: [{y_probs_array.min():.6f}, {y_probs_array.max():.6f}]")
     print(f"唯一概率值数量: {len(np.unique(y_probs_array))}")
 
-# 评估函数
 def evaluate_performance_native(y_true, y_pred, y_probs, model_name):
     y_true = np.asarray(y_true, dtype=int)
     y_pred = np.asarray(y_pred, dtype=int)
@@ -73,7 +67,6 @@ def evaluate_performance_native(y_true, y_pred, y_probs, model_name):
         "model": model_name, "y_true": y_true, "y_probs": y_probs_array
     }
 
-# 数据
 mapping_dict = load_mapping(mapping_path)
 test_df = pd.read_excel(test_path)
 test_df["text"] = test_df["text"].fillna("")
@@ -83,7 +76,6 @@ test_df["text_emoji_processed"] = test_df["text-emoji"].apply(lambda x: replace_
 print(f"测试集大小: {len(test_df)}")
 print(f"正例: {test_df['label'].sum()}, 负例: {len(test_df) - test_df['label'].sum()}")
 
-#  模型加载
 print("正在下载和加载 Qwen2.5-7B-Instruct...")
 try:
     tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-7B-Instruct", trust_remote_code=True)
@@ -144,7 +136,6 @@ def build_few_shot_prompt(test_text):
         {"role": "user", "content": user_content}
     ]
 
-# 推理
 def predict_labels_single(texts, desc="推理进度"):
     preds, probs = [], []
 
@@ -186,10 +177,7 @@ def predict_labels_single(texts, desc="推理进度"):
 
     return preds, probs
 
-# --------------- 主流程 ---------------
 test_y = test_df["label"].values
-
-print("开始Qwen2.5-7B 预测...")
 
 test_texts_original = test_df["text"].tolist()
 test_preds_original, test_probs_original = predict_labels_single(test_texts_original, desc="原始文本推理")
@@ -197,7 +185,6 @@ test_preds_original, test_probs_original = predict_labels_single(test_texts_orig
 test_texts_processed = test_df["text_emoji_processed"].tolist()
 test_preds_processed, test_probs_processed = predict_labels_single(test_texts_processed, desc="处理文本推理")
 
-# 去掉可能的 NaN
 valid_mask_original = ~np.isnan(test_probs_original)
 test_y_original = np.array(test_y)[valid_mask_original]
 test_probs_original = np.array(test_probs_original)[valid_mask_original]
@@ -211,11 +198,9 @@ test_preds_processed = np.array(test_preds_processed)[valid_mask_processed]
 print(f"原始文本有效样本数: {len(test_y_original)}/{len(test_y)}")
 print(f"Emoji处理有效样本数: {len(test_y_processed)}/{len(test_y)}")
 
-# --------------- 评估（原生） ---------------
 metrics_original = evaluate_performance_native(test_y_original, test_preds_original, test_probs_original, "Qwen-原始文本")
 metrics_processed = evaluate_performance_native(test_y_processed, test_preds_processed, test_probs_processed, "Qwen-Emoji处理")
 
-# 总结果
 print("\n=== 性能对比分析 ===")
 print(f"准确率差异: {metrics_processed['accuracy'] - metrics_original['accuracy']:+.4f}")
 print(f"精确率差异: {metrics_processed['precision'] - metrics_original['precision']:+.4f}")
@@ -234,5 +219,3 @@ result_df = pd.DataFrame({
 result_df.to_excel(f"{save_dir}/test_results_qwen7b.xlsx", index=False)
 metrics_comparison = pd.DataFrame([metrics_original, metrics_processed])
 metrics_comparison.to_excel(f"{save_dir}/test_metrics_qwen7b.xlsx", index=False)
-
-print(f"\n✅ 原生版评估完成！结果已保存至 {save_dir}")
