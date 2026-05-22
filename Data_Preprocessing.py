@@ -18,12 +18,8 @@ def load_stopwords(stopwords_path):
             stopwords = set([line.strip() for line in f])
             print(f"成功加载停用词表，包含 {len(stopwords)} 个停用词")
             return stopwords
-    except Exception as e:
-        print(f"加载停用词表失败: {e}")
-        default_stopwords = set(['的', '了', '和', '是', '就', '都', '而', '及', '与', '这', '那', '在', '要',
-                                 '为', '以', '或', '于', '有', '也', '但', '还', '又', '之', '这', '那', '着'])
-        print(f"使用默认停用词表，包含 {len(default_stopwords)} 个停用词")
-        return default_stopwords
+     except Exception as e:
+        raise RuntimeError(f"加载停用词表失败: {e}")
 
 def load_mapping(mapping_file):
     df = pd.read_csv(mapping_file, encoding='utf-8')
