@@ -41,12 +41,6 @@ def replace_emoji(text, mapping_dict):
     pat = re.compile("|".join(map(re.escape, keys)))
     return pat.sub(lambda m: f"[{mapping_dict[m.group(0)]}]", text)
 
-def debug_probability_distribution(y_probs, model_name):
-    y_probs_array = np.asarray(y_probs)
-    print(f"\n=== {model_name} 概率分布调试 ===")
-    print(f"概率值范围: [{y_probs_array.min():.6f}, {y_probs_array.max():.6f}]")
-    print(f"唯一概率值数量: {len(np.unique(y_probs_array))}")
-
 def evaluate_performance_native(y_true, y_pred, y_probs, model_name):
     y_true = np.asarray(y_true, dtype=int)
     y_pred = np.asarray(y_pred, dtype=int)
@@ -59,7 +53,7 @@ def evaluate_performance_native(y_true, y_pred, y_probs, model_name):
     rec = recall_score(y_true, y_pred, zero_division=0)
     f1 = f1_score(y_true, y_pred, zero_division=0)
 
-    print(f"\n=== {model_name} 评估结果 ===")
+    print(f"\n=== {model_name} result ===")
     print(f"Acc={acc:.4f}  Pre={pre:.4f}  Rec={rec:.4f}  F1={f1:.4f}")
 
     return {
@@ -136,46 +130,6 @@ def build_few_shot_prompt(test_text):
         {"role": "user", "content": user_content}
     ]
 
-def predict_labels_single(texts, desc="推理进度"):
-    preds, probs = [], []
-
-    token_1 = tokenizer.encode("1", add_special_tokens=False)[-1]
-    token_0 = tokenizer.encode("0", add_special_tokens=False)[-1]
-    print(f"Token IDs - '1': {token_1}, '0': {token_0}")
-
-    for i in tqdm(range(len(texts)), desc=desc):
-        try:
-            prompt = build_few_shot_prompt(texts[i])
-            prompt_str = tokenizer.apply_chat_template(prompt, tokenize=False, add_generation_prompt=True)
-            inputs = tokenizer(prompt_str, return_tensors="pt", truncation=True, max_length=512).to(model.device)
-
-            with torch.no_grad():
-                outputs = model.generate(
-                    **inputs,
-                    max_new_tokens=1,
-                    do_sample=False,
-                    temperature=0,
-                    output_scores=True,
-                    return_dict_in_generate=True,
-                    pad_token_id=tokenizer.eos_token_id
-                )
-                logits = outputs.scores[0][0]
-
-                logit_0 = logits[token_0].item()
-                logit_1 = logits[token_1].item()
-                probs_binary = torch.softmax(torch.tensor([logit_0, logit_1]), dim=0)
-                probability = probs_binary[1].item()
-
-                preds.append(int(probability > 0.5))
-                probs.append(probability)
-
-        except Exception:
-            preds.append(0)
-            probs.append(0.5)
-
-        torch.cuda.empty_cache()
-
-    return preds, probs
 
 test_y = test_df["label"].values
 
@@ -201,11 +155,11 @@ print(f"Emoji处理有效样本数: {len(test_y_processed)}/{len(test_y)}")
 metrics_original = evaluate_performance_native(test_y_original, test_preds_original, test_probs_original, "Qwen-原始文本")
 metrics_processed = evaluate_performance_native(test_y_processed, test_preds_processed, test_probs_processed, "Qwen-Emoji处理")
 
-print("\n=== 性能对比分析 ===")
-print(f"准确率差异: {metrics_processed['accuracy'] - metrics_original['accuracy']:+.4f}")
-print(f"精确率差异: {metrics_processed['precision'] - metrics_original['precision']:+.4f}")
-print(f"召回率差异: {metrics_processed['recall'] - metrics_original['recall']:+.4f}")
-print(f"F1分数差异: {metrics_processed['f1'] - metrics_original['f1']:+.4f}")
+print("\n===  ===")
+print(f": {metrics_processed['accuracy'] - metrics_original['accuracy']:+.4f}")
+print(f": {metrics_processed['precision'] - metrics_original['precision']:+.4f}")
+print(f": {metrics_processed['recall'] - metrics_original['recall']:+.4f}")
+print(f": {metrics_processed['f1'] - metrics_original['f1']:+.4f}")
 
 result_df = pd.DataFrame({
     "text_original": [test_texts_original[i] for i in np.where(valid_mask_original)[0]],
