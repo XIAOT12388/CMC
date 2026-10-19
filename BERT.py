@@ -47,12 +47,6 @@ def load_mapping(mapping_file):
         mapping_dict[emoji] = description
     return mapping_dict
 
-def replace_emoji_with_special_token(text, mapping_dict):
-
-    sorted_keys = sorted(mapping_dict.keys(), key=lambda x: (-len(x), x))
-    pattern = re.compile('|'.join(re.escape(k) for k in sorted_keys))
-    return pattern.sub(lambda x: f"[{mapping_dict[x.group()]}]", str(text))
-
 def encode_texts(texts, tokenizer, batch_size=8, max_length=180):
 
     encodings = []
@@ -77,48 +71,8 @@ df['text-emoji'] = df['text-emoji'].fillna('')
 mapping_file = 'your path'
 mapping_dict = load_mapping(mapping_file)
 
-df['text_with_emoji'] = df['text-emoji'].apply(lambda x: replace_emoji_with_special_token(x, mapping_dict))
-
-
-texts = df['text'].values
 texts_with_emoji = df['text_with_emoji'].values
 labels = df['label'].values.astype(int)
-
-tokenizer = BertTokenizer.from_pretrained('bert-base-chinese')
-
-all_special_tokens = []
-for text in texts_with_emoji:
-    tokens = re.findall(r'\[([^\[\]]+)\]', text)
-    all_special_tokens.extend(tokens)
-
-all_special_tokens = sorted(list(set(all_special_tokens)))
-special_tokens_list = [f"[{token}]" for token in all_special_tokens]
-tokenizer.add_tokens(special_tokens_list)
-
-print(f"Tokenizer vocabulary size after adding special tokens: {len(tokenizer)}")
-
-def train_model(model):
-    model.train()
-
-def evaluate(model, dataloader, device):
-    model.eval()
-    predictions = []
-    true_labels = []
-    predicted_labels = []
-
-    with torch.no_grad():
-        for batch in dataloader:
-            b_input_ids, b_attention_mask, b_labels = [t.to(device) for t in batch]
-
-            outputs = model(b_input_ids, attention_mask=b_attention_mask)
-
-            logits = outputs.logits
-            probs = torch.softmax(logits, dim=1)[:, 1]
-            predictions.extend(probs.cpu().numpy())
-            true_labels.extend(b_labels.cpu().numpy())
-            predicted_labels.extend((probs >= 0.5).int().cpu().numpy())
-
-    return predictions, true_labels, predicted_labels
 
 def initialize_model():
 
@@ -195,15 +149,11 @@ for fold, (train_idx, val_idx) in enumerate(skf.split(texts, labels)):
         torch.manual_seed(worker_seed)
 
 
-    train_texts_no_emoji = texts[train_idx]
-    val_texts_no_emoji = texts[val_idx]
     train_texts_emoji = texts_with_emoji[train_idx]
     val_texts_emoji = texts_with_emoji[val_idx]
     train_labels_fold = labels[train_idx]
     val_labels_fold = labels[val_idx]
 
-    train_inputs_no_emoji, train_masks_no_emoji = encode_texts(train_texts_no_emoji, tokenizer)
-    val_inputs_no_emoji, val_masks_no_emoji = encode_texts(val_texts_no_emoji, tokenizer)
     train_inputs_emoji, train_masks_emoji = encode_texts(train_texts_emoji, tokenizer)
     val_inputs_emoji, val_masks_emoji = encode_texts(val_texts_emoji, tokenizer)
 
@@ -281,35 +231,6 @@ for fold, (train_idx, val_idx) in enumerate(skf.split(texts, labels)):
         f1_emoji = f1_score(labels_emoji_fold, predicted_labels_emoji)
         print(f"Fold {fold + 1} Epoch {epoch + 1} (No Emoji) - F1: {f1_no_emoji:.4f}")
         print(f"Fold {fold + 1} Epoch {epoch + 1} (With Emoji) - F1: {f1_emoji:.4f}")
-
-        if f1_no_emoji > best_f1_no_emoji:
-            best_f1_no_emoji = f1_no_emoji
-            best_fold_no_emoji = fold + 1
-            torch.save(model_no_emoji.state_dict(), best_model_path_no_emoji)
-            print(f"Saved best no emoji model for fold {fold + 1} at epoch {epoch + 1} with F1: {best_f1_no_emoji:.4f}")
-            val_metrics_no_emoji = {
-                'fold': fold + 1,
-                'accuracy': accuracy_no_emoji,
-                'precision': precision_score(labels_no_fold, predicted_labels_no_emoji),
-                'recall': recall_score(labels_no_fold, predicted_labels_no_emoji),
-                'f1': f1_no_emoji,
-                'auc': roc_auc_score(labels_no_fold, preds_no_emoji)
-            }
-            pd.DataFrame([val_metrics_no_emoji]).to_excel(
-                os.path.join(figure_dir, 'your path'),
-                index=False
-            )
-            best_metrics_no_emoji.append(val_metrics_no_emoji)
-
-            best_val_preds_no_emoji = pd.DataFrame({
-                'user_id_original': df.iloc[val_idx]['user ID original'].values,
-                'count': df.iloc[val_idx]['count'].values,
-                'text': val_texts_no_emoji,
-                'true_label': val_labels_fold,
-                'predicted_label': predicted_labels_no_emoji,
-                'model_type': 'no_emoji',
-                'fold': fold + 1
-            })
 
         if f1_emoji > best_f1_emoji:
             best_f1_emoji = f1_emoji
@@ -408,14 +329,11 @@ model_emoji.eval()
 
 preds_emoji, labels_emoji_fold, predicted_labels_emoji = evaluate(model_emoji, val_dataloader_emoji, device)
 
-
 test_file_path = 'your path'
 test_df = pd.read_excel(test_file_path)
 test_df['text-emoji'] = test_df['text-emoji'].fillna('')
 
 test_df = test_df.sample(frac=1, random_state=SEED).reset_index(drop=True)
-
-test_df['text_with_emoji'] = test_df['text-emoji'].apply(lambda x: replace_emoji_with_special_token(x, mapping_dict))
 
 
 test_inputs, test_masks = encode_texts(test_df['text_with_emoji'], tokenizer)
