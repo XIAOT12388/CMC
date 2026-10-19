@@ -77,22 +77,6 @@ def get_text_hash(text):
         text = str(text)
     return hashlib.md5(text.encode('utf-8')).hexdigest()
 
-def debug_probability_distribution(y_probs, model_name):
-
-    y_probs_array = np.asarray(y_probs)
-
-    print(f"\n=== {model_name} 概率分布调试 ===")
-    print(f"概率值范围: [{y_probs_array.min():.6f}, {y_probs_array.max():.6f}]")
-    print(f"唯一概率值数量: {len(np.unique(y_probs_array))}")
-
-    unique_probs, counts = np.unique(y_probs_array, return_counts=True)
-    print(f"前10个概率值及其频次:")
-    for prob, count in zip(unique_probs[:10], counts[:10]):
-        print(f"  {prob:.6f}: {count}次")
-
-    if len(unique_probs) < 10:
-        print(f"所有概率值: {unique_probs}")
-
 mapping_dict = load_mapping(mapping_file)
 
 test_df = pd.read_excel(test_path)
@@ -156,84 +140,6 @@ def build_messages(test_text):
         {"role": "user", "content": user_content}
     ]
 
-
-def extract_true_probability_reliable(response):
-    try:
-        choice = response.choices[0]
-
-        if not choice.logprobs or not choice.logprobs.content:
-            print('[WARN] logprobs missing')
-            return None
-
-        token_logprobs = choice.logprobs.content[0].top_logprobs
-        if not token_logprobs:
-            print('[WARN] top_logprobs empty')
-            return None
-
-        logprob_dict = {}
-        for top_logprob in token_logprobs:
-            token = top_logprob.token.strip()
-            logprob_dict[token] = top_logprob.logprob
-
-        if "0" in logprob_dict and "1" in logprob_dict:
-            logprob_0 = logprob_dict["0"]
-            logprob_1 = logprob_dict["1"]
-
-            max_logprob = max(logprob_0, logprob_1)
-            logprob_0_adj = logprob_0 - max_logprob
-            logprob_1_adj = logprob_1 - max_logprob
-
-            exp_0 = np.exp(logprob_0_adj)
-            exp_1 = np.exp(logprob_1_adj)
-            sum_exp = exp_0 + exp_1
-
-            probability = exp_1 / sum_exp
-            return float(probability)
-
-        else:
-            print('[WARN] 0/1 tokens missing in top_logprobs')
-            return None
-
-    except Exception as e:
-        print(f'[ERROR] 概率提取失败: {e}')
-        return None
-
-def call_deepseek_api(messages, text_hash, cache, max_retries=1):
-
-    for attempt in range(max_retries):
-        try:
-            response = client.chat.completions.create(
-                model="deepseek-chat",
-                messages=messages,
-                max_tokens=1,
-                temperature=0,
-                logprobs=True,
-                #top_logprobs=20,
-                stream=False
-            )
-
-            content = response.choices[0].message.content.strip()
-            prob = extract_true_probability_reliable(response)
-
-            if prob is None:
-                print(f'第{attempt + 1}次尝试概率提取失败，进行重试')
-                if attempt < max_retries - 1:
-                    time.sleep(1)
-                    continue
-                else:
-                    print(f'[ERROR] 无法获取真实概率，文本哈希: {text_hash[:8]}')
-                    return content, parse_model_output(content), None
-
-            pred = parse_model_output(content)
-
-            cache[text_hash] = {
-                'content': content,
-                'pred': pred,
-                'prob': prob  
-            }
-
-            return content, pred, prob
-
         except Exception as e:
             print(f"API调用失败 (尝试 {attempt + 1}/{max_retries}): {e}")
             if attempt < max_retries - 1:
@@ -256,10 +162,10 @@ def parse_model_output(answer):
         return 0
     else:
         if answer not in ["0", "1"]:
-            print(f"警告：模型输出异常: '{answer}'，默认返回0")
+            print(f"warning: '{answer}'，默认返回0")
         return 0
 
-def predict_labels_api(texts, batch_delay=2, desc="DeepSeek推理"):
+def predict_labels_api(texts, batch_delay=2, desc="DeepSeek"):
     preds = []
     probs = []
     failed_count = 0
@@ -295,7 +201,7 @@ def predict_labels_api(texts, batch_delay=2, desc="DeepSeek推理"):
 
         if prob is None:
             failed_count += 1
-            print(f'[WARN] API调用失败或概率缺失，当前失败数: {failed_count}')
+            print(f'[WARN] API failture: {failed_count}')
 
         preds.append(pred)
         probs.append(prob)
@@ -324,7 +230,7 @@ def evaluate_performance_fixed(y_true, y_pred, y_probs, model_name):
     rec = recall_score(y_true, y_pred, zero_division=0)
     f1 = f1_score(y_true, y_pred, zero_division=0)
 
-    print(f"\n=== {model_name} 评估结果 ===")
+    print(f"\n=== {model_name} result ===")
     print(f"Acc    = {acc:.4f}")
     print(f"Pre    = {pre:.4f}")
     print(f"Rec    = {rec:.4f}")
@@ -341,30 +247,19 @@ def evaluate_performance_fixed(y_true, y_pred, y_probs, model_name):
     }
 test_y = test_df["label"].values
 
-print("\n1. 预测原始文本（无emoji处理）...")
-test_texts_original = test_df["text"].tolist()
-test_preds_original, test_probs_original = predict_labels_api(
-    test_texts_original, batch_delay=2, desc="原始文本推理"
-)
 
-print("\n2. 预测处理后的文本（包含emoji语义）...")
-test_texts_processed = test_df["text_emoji_processed"].tolist()
-test_preds_processed, test_probs_processed = predict_labels_api(
-    test_texts_processed, batch_delay=2, desc="处理文本推理"
-)
-
-print("\n3. 评估模型性能...")
+print("\n3. ...")
 metrics_original = evaluate_performance_fixed(test_y, test_preds_original, test_probs_original, "DeepSeek-原始文本")
 metrics_processed = evaluate_performance_fixed(test_y, test_preds_processed, test_probs_processed, "DeepSeek-Emoji处理")
 
 
-print("\n=== 性能对比分析 ===")
-print(f"准确率差异: {metrics_processed['accuracy'] - metrics_original['accuracy']:+.4f}")
-print(f"精确率差异: {metrics_processed['precision'] - metrics_original['precision']:+.4f}")
-print(f"召回率差异: {metrics_processed['recall'] - metrics_original['recall']:+.4f}")
-print(f"F1分数差异: {metrics_processed['f1'] - metrics_original['f1']:+.4f}")
+print("\n===  ===")
+print(f": {metrics_processed['accuracy'] - metrics_original['accuracy']:+.4f}")
+print(f": {metrics_processed['precision'] - metrics_original['precision']:+.4f}")
+print(f": {metrics_processed['recall'] - metrics_original['recall']:+.4f}")
+print(f": {metrics_processed['f1'] - metrics_original['f1']:+.4f}")
 
-print("\n7. 保存最终结果...")
+print("\n7. ...")
 result_df3 = pd.DataFrame({
     "text_original": test_texts_original,
     "text_processed": test_texts_processed,
